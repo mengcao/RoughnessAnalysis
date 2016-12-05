@@ -43,7 +43,6 @@ else
 end
 % End initialization code - DO NOT EDIT
 
-
 % --- Executes just before SurfaceRoughnessAnalysis_SIMPLE is made visible.
 function SurfaceRoughnessAnalysis_SIMPLE_OpeningFcn(hObject, eventdata, handles, varargin)
 % This function has no output args, see OutputFcn.
@@ -61,7 +60,6 @@ guidata(hObject, handles);
 % UIWAIT makes SurfaceRoughnessAnalysis_SIMPLE wait for user response (see UIRESUME)
 % uiwait(handles.figure1);
 
-
 % --- Outputs from this function are returned to the command line.
 function varargout = SurfaceRoughnessAnalysis_SIMPLE_OutputFcn(hObject, eventdata, handles) 
 % varargout  cell array for returning output args (see VARARGOUT);
@@ -71,7 +69,6 @@ function varargout = SurfaceRoughnessAnalysis_SIMPLE_OutputFcn(hObject, eventdat
 
 % Get default command line output from handles structure
 varargout{1} = handles.output;
-
 
 % --- Executes on selection change in popupmenu1.
 function popupmenu1_Callback(hObject, eventdata, handles)
@@ -97,7 +94,7 @@ end
 A = length(FileName);        % A variable we use in for loops to follow
 IBWFiles = cell(1,A);       % This will hold the image data itself!!!
 
-for i=[1:A]                 % Look through all of the files selected above
+for i= 1:A                % Look through all of the files selected above
     
     Q = FileName{i};        % Assign the filename to variable Q  
     P = IBWread(Q);         % This function reads in and assigns ibw files to P
@@ -216,7 +213,6 @@ global AllExpFitCoefficients
 global AllLinFitCoefficients
 global AllRoughnessParameters
 global DataForFitting
-%global FirstExpPoint
 global LastLinearPoint
 global LinFit
 global PhysicalScanSize
@@ -234,12 +230,12 @@ DataFileHeader = {'Length(A)','RMS Roughness(A)','STD of Roughness(A)'};
 
 AllImageStats = cell(1,A);     % pre-allocates a cell array which will store the calculated length/RMS matrices
 Pixels = zeros(1,A);
+SumOfLogRMSWeights = 0;
+
 VarianceOfLogRMSValues = 1;
 
 ImageSelect = get(handles.edit2, 'string');
 ImageSelect = str2double(ImageSelect);
-
-
 
 for i = [1:A]                       
     tempCELL = IBWFiles{i};       % picks out a single image file-set from the cell array
@@ -258,7 +254,8 @@ for i = [1:A]
     LogRMSValues = zeros(N,1);
     LogAngstromLength = zeros(N,1);
     LogSTD = zeros(N,1);
-    LogRMSWeights = ones(N,1);    
+    LogRMSWeights = zeros(N,1);
+    
     
     for j = [1:N]                 % this outer loop will reset for each image selected
         
@@ -267,7 +264,7 @@ for i = [1:A]
         RMSHolder = zeros(NumberOfValuesToAVG,1);       % pre-allocates a matrix in which the STD from each small square
         m = 1;                                               % is saved until they can be averaged and THEIR STD calculated    
         
-        ADD = 2^j-1;
+        ADD = 2^j-1;        % ADD is an incrementer which adjusts to the size of the box being used for STD calculations, below
         
         for k = [1:PixelsPerSquare:(Pixels(1,i)-PixelsPerSquare+1)]           % in the x-direction, this loops takes us from the first to last pixel
             incrementk = k + ADD;                                             % by increments equal to the small square size determined above as "pixel per square"          
@@ -279,31 +276,37 @@ for i = [1:A]
              end
         end
         
-        StdOfRMS = std(RMSHolder)*1e10;      % Finds the STD/uncertainty for all the little-square calculations
-        RMSMean = mean(RMSHolder)*1e10;      % averages the measurements from each small square
-        STD(j) = StdOfRMS;
-        LogSTD(j) = STD(j)/(RMSMean*log(10));
-        RMSValues(j) = RMSMean;         % Adds to the average from above to a list which saves the values across length scales, for each image
-        LogRMSValues(j) = log10(RMSMean);
-        tempAngstromLength = PhysicalScanSize*(PixelsPerSquare/Pixels(1,i));
-        AngstromLength(j) = tempAngstromLength;    % creates a list of the lengths we will need to plot
-        LogAngstromLength(j) = log10(tempAngstromLength);
+        StdOfRMS = std(RMSHolder)*1e10;         % Finds the STD/uncertainty for all the little-square calculations
+        RMSMean = mean(RMSHolder)*1e10;         % averages the measurements from each small square
+        STD(j) = StdOfRMS;                      % Stores the avg STD value in a vector for calculation of LogSTD in the next line
+        LogSTD(j) = STD(j)/(RMSMean*log(10));   % This is the fractional uncertainty of LogRMSValues, below   
+        RMSValues(j) = RMSMean;                 % Adds to the average from above to a list which saves the values across length scales, for each image
+        LogRMSValues(j) = log10(RMSMean);       % this will be the y-value we use for "roughness statistics" and calculating roughness parameters
+       
         
-        if LogSTD(j) > 0
+        tempAngstromLength = PhysicalScanSize*(PixelsPerSquare/Pixels(1,i));  % need to turn pixel values into real length values!
+        AngstromLength(j) = tempAngstromLength;                               % creates a list of the real lengths we have just calculated
+        LogAngstromLength(j) = log10(tempAngstromLength);                     % we want log-log for roughness parameter calculations, this is the x-values vector
+        
+        if j ~= N
             VarianceOfLogRMSValues = LogSTD(j)*LogSTD(j);  % We calculate the weights for each point for the final fit
             LogRMSWeights(j) = 1 / VarianceOfLogRMSValues; % The weight, for each data point, is  1 / variance
         else
-            tempFit = fitlm(LogAngstromLength,LogSTD);
-            tempSlope = tempFit.Coefficients{2,1};
-            tempy0 = tempFit.Coefficients{1,1};
-            SquareRootofLastWeight = tempSlope(1,1)*LogAngstromLength(j)+tempy0(1,1);
-            LogSTD(j) = SquareRootofLastWeight;
-            LastWeight = SquareRootofLastWeight^2;
-            LogRMSWeights(j) = 1 / LastWeight;
+            tempFit = fitlm(LogAngstromLength,LogSTD);   % so... above we could find the weights for fitting quite easily
+            tempSlope = tempFit.Coefficients{2,1};       % but the last RMS roughness measurement, of the ENTIRE AFM image
+            tempy0 = tempFit.Coefficients{1,1};          % produces only ONE value. Thus, there is no obvious STD/uncertainty to use!
+            SquareRootofLastWeight = tempSlope(1,1)*LogAngstromLength(j)+tempy0(1,1); 
+            LogSTD(j) = SquareRootofLastWeight;          % So... here we fit the uncertainties of all of the smaller RMS roughness values
+            LastWeight = SquareRootofLastWeight^2;       % which were calculated, and use it to extrapolate what we might expect
+            LogRMSWeights(j) = 1 / LastWeight;           % The uncertainty of the last, single RMS roughness measurement to be
         end
         
+%          SumOfLogRMSWeights = sum(LogRMSWeights)
+%          sqrtOfSumOfLogRMSWeights = sqrt(SumOfLogRMSWeights)
+%          LogRMSWeights = LogRMSWeights ./ sqrtOfSumOfLogRMSWeights
+        
         XandYandZ = [AngstromLength RMSValues STD LogAngstromLength LogRMSValues LogSTD LogRMSWeights]; % creates a 6-column matrix with important values
-        y0Start = LogRMSValues(end);          
+        y0Start = LogRMSValues(end);         % this is  used to give the exponential fit a place to begin its search for a y-intercept
 %       assignin('base','XandYandZ',XandYandZ);     % DIAGNOSTIC: Adds 3-column list to the workspace
     end
     
@@ -314,7 +317,7 @@ for i = [1:A]
     %assignin('base','AllImageStats',AllImageStats); % DIAGNOSTIC: Saves the above stat lists for all of the images to the workspace
 end
 
-LS = 'Length Scale [Angstroms]';
+LS = 'Length Scale [Angstroms]';  % These are just variables to use for column headers in the next for loop
 RR = 'RMS Roughness [Angstroms]';
 STDRR = 'STD of RMS Roughness [Angstroms]';
 LOGLS = 'log(Length Scale)';
@@ -334,31 +337,29 @@ for i = [1:A]
 end
 disp '**Done Computing Roughness Statistics**'
 
-AllExpFitCoefficients = cell(1,A);
-AllLinFitCoefficients = cell(1,A);
-AllRoughnessParameters = cell(1,A);
+AllExpFitCoefficients = cell(2,A);  % We will need to store and re-use the fitting parameters
+AllLinFitCoefficients = cell(1,A);  % for calculations of Roughness Parameters as well as 
+AllRoughnessParameters = cell(1,A); % plotting figures in functions to follow
 
 FirstExpFit = fittype('y0+a*exp(b*x)','independent','x','dependent','y','coefficients',{'y0','a','b'});
 
 FirstExpFitOptions = fitoptions(FirstExpFit);
 %FirstExpFitOptions.Algorithm = 'Levenberg-Marquardt';
 %FirstExpFitOptions.Robust = 'LAR';
-FirstExpFitOptions.StartPoint = [y0Start -150 0.1];
-FirstExpFitOptions.Lower = [0 -300 -5];
+FirstExpFitOptions.StartPoint = [y0Start -150 0.1];   % the start point, and lower upper bounds for fitting
+FirstExpFitOptions.Lower = [0 -300 -5];               % were determined by using OriginPro to fit several plots of the Roughness Statistics data                                                    
 FirstExpFitOptions.Upper = [5  0 0];
-FirstExpFitOptions.MaxFunEvals = 20000;
-FirstExpFitOptions.MaxIter = 20000;
+FirstExpFitOptions.MaxFunEvals = 50000;
+FirstExpFitOptions.MaxIter = 50000;
 
-LastLinearPoint = zeros(A,1);
-%FirstExpPoint = 4
+LastLinearPoint = zeros(A,1);  % pre-allocates a vector to hold the points where the fit should switch over from linear to exponential, for different AFM images
 
 for i = [1:A]
      
     BREAK = 0;
-    BREAK2 = 0;
     N = AllImageStats{i}{3};    % this is for convenience so the global variable does not keep getting called
     tempLength = length(N(:,1));  % we previously calculated the roughness statistics with # rows = tempLength
-    testOnesVector = ones(tempLength,1);
+    testOnesVector = ones(tempLength,1); % A diagnostic vector for tinkering with weights for the fitting procedures
     
     DataForFitting = zeros(tempLength,2); % pre-allocate a matrix of width 3 and length tempLength 
     DataForFitting(:,1) = N(:,4);  % this column = Log (Length Scale [A])
@@ -367,7 +368,9 @@ for i = [1:A]
     ExpFitAdjRHolder = zeros(tempLength,1);
     
     for k = [2:tempLength-2] 
-        
+        % The line below is a weight option for trouble-shooting.. it
+            % weights all of the data points equally for fitting.
+            %FirstExpFitOptions.Weights = testOnesVector(end-k-1:end,1);
          %FirstExpFitOptions.Weights = testOnesVector(end-k:end,1); % if i use the actual weights at first, the fit always stops too soon
          FirstExpFitOptions.Weights = AllImageStats{1,i}{3}(end-k:end,7);
          
@@ -376,8 +379,10 @@ for i = [1:A]
          ExpFitAdjRHolder(k) = AdjR2;
 
         if ExpFitAdjRHolder(k) < ExpFitAdjRHolder(k-1)
-            
+            % The line below is a weight option for trouble-shooting.. it
+            % weights all of the data points equally for fitting.
             %FirstExpFitOptions.Weights = testOnesVector(end-k-1:end,1);
+            
             FirstExpFitOptions.Weights = AllImageStats{1,i}{3}(end-k-1:end,7);       
             [ExpFit, GoF2] = fit(DataForFitting(end-k-1:end,1), DataForFitting(end-k-1:end,2), FirstExpFit, FirstExpFitOptions);
             AdjR2_2 = GoF2.adjrsquare;
@@ -394,18 +399,18 @@ for i = [1:A]
         if BREAK == 1
             break
         end
-        
+            
             FirstExpPoint = tempLength - k + 1;
             LastLinearPoint(i,1) = FirstExpPoint;
             temp4 = tempLength - FirstExpPoint + 1;
     end
-    %ExpFitAdjRHolder
     
-    ExpFitCoefficients = coeffvalues(ExpFit);
+    ExpFitCoefficients = coeffvalues(ExpFit); % Here we pull out the coeffcients from the exponential fit, above
     y0 = ExpFitCoefficients(1);
     a = ExpFitCoefficients(2);
     b = ExpFitCoefficients(3);
-       
+    ExpFitError = GoF.sse
+    
     ExpRange = temp4;
     ExpFitConfidenceInterval = confint(ExpFit);
     BOTTOM = ExpFitConfidenceInterval(1,1);
@@ -414,14 +419,15 @@ for i = [1:A]
     tvalue = tinv(0.95,ExpRange);
           
     ExpFitYIntercept = ExpFitCoefficients(1);    
-    ExpFitYInterceptError = sqrt(ExpRange)*ConfidenceIntervalRange/tvalue;           
-    ExpFitYInterceptPartialError = (ExpFitYInterceptError/ExpFitYIntercept)^2;    
-    AllExpFitCoefficients {1,i} = {y0;a;b};
-    %assignin('base','AllExpFitCoefficients',AllExpFitCoefficients); % DIAGNOSTIC
+    ExpFitYInterceptError = sqrt(ExpRange)*ConfidenceIntervalRange/tvalue;
+    y0error = ExpFitYInterceptError;    
+    ExpFitYInterceptPartialError = (ExpFitYInterceptError/ExpFitYIntercept)^2;
+    
+    AllExpFitCoefficients {1,i} = {y0;a;b}; % We now store the coefficients from the exponential fit for later calculation and plotting
+    AllExpFitCoefficients {2,i} = {y0error;ExpFitError};
+    assignin('base','AllExpFitCoefficients',AllExpFitCoefficients); % DIAGNOSTIC
    
-    %LinFit = fitlm(DataForFitting(1:4,1),DataForFitting(1:4,2),'Weight', AllImageStats{1,i}{3}(1:4,7));
     LinFit = fitlm(DataForFitting(1:LastLinearPoint(i,1),1),DataForFitting(1:LastLinearPoint(i,1),2),'Weight', AllImageStats{1,i}{3}(1:LastLinearPoint(i,1),7));
-    %LinFit.Rsquared;
   
     LinearYIntercept = LinFit.Coefficients{1,1};
     LinearYInterceptError = LinFit.Coefficients{1,2};
@@ -435,8 +441,9 @@ for i = [1:A]
         
     XIntercept = ((y0)-LinearYIntercept)/LinearSlope;
     XInterceptError = XIntercept*sqrt(LinearSlopePartialError + LinearYInterceptPartialError + ExpFitYInterceptPartialError);
-    
+
     %BELOW WE CALCULATE THE THREE ROUGHNESS PARAMETERS, THE PIECE OF DATA
+    %WHICH WE CARE ABOUT MOST
     
     FractalDimension = 3 - LinearSlope;
     FractalDimensionError = FractalDimension*(LinearSlopeError/LinearSlope);
@@ -475,7 +482,6 @@ for i = [1:A]
     fprintf(tempRoughnessParameterExportFile, '%s %2s %2s\n',FD,SR,CL); 
     fprintf(tempRoughnessParameterExportFile, '%.1f %20.1f %30.1f',tempData2);
     fclose(tempRoughnessParameterExportFile);
-
 end
 disp '***Done Computing Roughness Parameters***'
 
@@ -529,12 +535,7 @@ for i = [1:A]
 %     ScanRate = strcat(clippedString, tempUnits); %typical string concatenation method, frequently used below
     
     LinSlope = AllLinFitCoefficients{1,i}{1};
-%     LinSlopeError = AllLinFitCoefficients{1,i}{2};
-%     LinSlopePartialError = LinSlopeError / LinSlope;
-    
     LinYIntercept = AllLinFitCoefficients{1,i}{3};
-%     LinYInterceptError = AllLinFitCoefficients{1,i}{4};
-%     LinYInterceptPartialError = LinYInterceptError / LinYIntercept;
        
     y0 = AllExpFitCoefficients{i}{1};
     a = AllExpFitCoefficients{i}{2};
@@ -542,8 +543,7 @@ for i = [1:A]
 
     XforLinear = DataForFitting2(1:LastLinearPoint(i,1),1);
     YforLinear = LinYIntercept + LinSlope*XforLinear;
-    %YforLinearError = YforLinear*sqrt(LinSlopePartialError^2+LinYInterceptPartialError^2);
-    
+
     XforExp = DataForFitting2(LastLinearPoint(i,1):end,1);
     YforExp = y0 + a*exp(b*XforExp);
 
@@ -556,28 +556,30 @@ for i = [1:A]
     
     figure();
     
-%     GraphTitle = tempName2;
-    GraphTitle = cat(2,'Roughness Analysis for: ',tempName2,'');
-    
     % Below is a text box which will display the title of the sample/image
-    ImageNumber = i;
+    GraphTitle = cat(2,'Roughness Analysis for: ',tempName2,'');
     TitleNotes = annotation('textbox',...
     [0.195 0.84 0.64 0.075],...
     'String',{GraphTitle},...
-    'FontSize',12,...
+    'FontSize',14,...
     'FontName','Constantina',...
     'LineStyle','-',...
     'EdgeColor',[0 0 0],...
     'LineWidth',0.01,...
     'BackgroundColor',[1 1 1],...
     'Color',[0.1 0.1 0.1],...
-    'Interpreter', 'none');
+    'Interpreter', 'none',...
+    'FontWeight', 'bold',...
+    'HorizontalAlignment','center',...
+    'FitBoxToText','on');
     
     % Below, calculations are made for the parameters and info to be
     % displayed in the description text-box, lower-right corner of figure
+    
     Df = AllRoughnessParameters{1,i}{2,1}(1,1);
     Df = num2str(Df);
     Df = Df(1:end-2);
+    
     DfError = AllRoughnessParameters{1,i}{3,1}(1,1);
     DfError = ceil(DfError/10^floor(log10(DfError)))*10^floor(log10(DfError)); % salt to suit...
     FractalErrorInfo = num2str(DfError);
@@ -591,7 +593,7 @@ for i = [1:A]
     SatRuffErrorInfo = cat(2,'(',SatRuffErrorInfo,')');
     SatRuff = AllRoughnessParameters{1,i}{2,1}(1,2);
     SatRuff = num2str(SatRuff);
-    SatRuff = SatRuff(1:end-2);
+    SatRuff = SatRuff(1:end-3);
     SatRuffInfo = 'Saturation Roughness: ';
     SatRuffInfo = cat(2,SatRuffInfo, SatRuff,Space,SatRuffErrorInfo,' [A]');
     
@@ -613,15 +615,16 @@ for i = [1:A]
     % Below is a textbox which will show the important
     % information about the sample
     ImageNotes = annotation('textbox',...
-    [0.34 0.12 0.56 0.31],...
+    [0.62 0.08 0.1 0.3],...
     'String',{PhysicalImageSize ImageResolution Space FractalInfo SatRuffInfo CorrLengthInfo },...
-    'FontSize',12,...
+    'FontSize',14,...
     'FontName','Constantina',...
     'LineStyle','-',...
     'EdgeColor',[0 0 0],...
     'LineWidth',0.1,...
     'BackgroundColor',[1 1 1],...
-    'Color',[0.1 0.1 0.1]);
+    'Color',[0.1 0.1 0.1],...
+    'FitBoxToText','on');
     
     plot(XforLinear, DataForFitting2(1:LastLinearPoint(i,1),2),'o'); hold on;
     plot(XforLinear,YforLinear,'b'), hold on;  
@@ -629,13 +632,16 @@ for i = [1:A]
     plot(XforExp, YforExp,'g'), hold on;
     plot(XforExp, DataForFitting2(LastLinearPoint(i,1):end,2),'x');
     
-    axis([1.5 tempLength/2 0 DataForFitting2(end,2)+DataForFitting2(end,2)/5]);
-    errorbar(DataForFitting2(:,1),DataForFitting2(:,2), DataForFitting2(:,3), 'r.');   
-    grid on; xlabel('Log( LengthScale [A] )'); ylabel('Log( RMS Roughness [A] )');
+    errorbar(DataForFitting2(:,1),DataForFitting2(:,2), DataForFitting2(:,3),'r.');
+    
+    grid on;
+    axis([1.5 ceil(DataForFitting2(end,1)*10)/10 0 DataForFitting2(end,2)+DataForFitting2(end,2)/4]);
+    xlabel('Log( LengthScale [A] )','FontWeight','bold','FontName','Constantina','FontSize',16); 
+    ylabel('Log( RMS Roughness [A] )','FontWeight','bold','FontName','Constantina','FontSize',16);
 end
 
 % --- Plot Data from ALL AFM IMAGES SELECTED on a Single Figure
-
+%
 function pushbutton4_Callback(hObject, eventdata, handles)
 % hObject    handle to pushbutton4 (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
@@ -651,55 +657,53 @@ global LastLinearPoint
 global Pixels
 global y0
 
-Space = ' ';
-clippedString = 0;
-TotalYDataForFitting = zeros(length(AllImageStats{1}{3}),1);
-TotalYErrorDataForFitting = zeros(length(AllImageStats{1}{3}),1);
-TotalLinSlope = 0;
-TotalLinSlopeError = 0;
-TotalLinYIntercept = 0;
-TotalLinYInterceptError = 0;
-Totaly0 = 0;
-Totala = 0;
-Totalb = 0;
-TotalDf = 0;
+AllDfErrors = zeros(1,A);
+AllCorrLengthErrors = zeros(1,A);
+AllSatRuffErrors = zeros(1,A);
+clippedString = '';
+CorrLengthError = 0;
+CurrentCorrLength = 0;
+CurrentCorrLengthError = 0;
+CurrentCorrLengthWeight = 0;
+CurrentDf = 0;
+CurrentDfError = 0;
+CurrentDfWeight = 0;
+CurrentSatRuff = 0;
+CurrentSatRuffError = 0;
+CurrentSatRuffWeight = 0;
 DfError = 0;
 DfErrorAVG = 0;
 SatRuff = 0;
 SatRuffError = 0;
-TotalCorrLength = 0;
-CorrLengthError = 0;
-AVGDfError = 0;
-TotalSatRuff = 0;
-TotalCorrLengthError = 0;
-TotalSatRuffError = 0;
+Space = ' ';
 sqrtA = sqrt(A);
-CurrentDf = 0;
-CurrentDfError = 0;
-CurrentDfWeight = 0;
-SumOfDfWeights = 0;
-CurrentSatRuff = 0;
-CurrentSatRuffError = 0;
-CurrentSatRuffWeight = 0;
-SumOfSatRuffWeights = 0;
-CurrentCorrLength = 0;
-CurrentCorrLengthError = 0;
-CurrentCorrLengthWeight = 0;
 SumOfCorrLengthWeights = 0;
+SumOfDfWeights = 0;
+SumOfSatRuffWeights = 0;
+TotalDf = 0;
+TotalCorrLength = 0;
+TotalCorrLengthError = 0;
+TotalLinSlope = 0;
+TotalLinSlopeError = 0;
+TotalLinYIntercept = 0;
+TotalLinYInterceptError = 0;
+TotalSatRuff = 0;
+TotalSatRuffError = 0;
+TotalYDataForFitting = zeros(length(AllImageStats{1}{3}),1);
+TotalYErrorDataForFitting = zeros(length(AllImageStats{1}{3}),1);
+
+
 
 for i = [1:A]
     
     N = AllImageStats{i}{3}; 
     tempLength = length(N(:,1));
-    
+
     DataForFitting2 = zeros(tempLength,3);
     DataForFitting2(:,1) = N(:,4);
     DataForFitting2(:,2) = N(:,5);
     DataForFitting2(:,3) = N(:,6);    
-    
-    TotalYDataForFitting = TotalYDataForFitting + DataForFitting2(:,2);
-    TotalYErrorDataForFitting = TotalYErrorDataForFitting + DataForFitting2(:,3);
-   
+
     LinSlope = AllLinFitCoefficients{1,i}{1};
     TotalLinSlope = TotalLinSlope + LinSlope;
     LinSlopeError = AllLinFitCoefficients{1,i}{2};
@@ -709,17 +713,16 @@ for i = [1:A]
     TotalLinYIntercept = TotalLinYIntercept + LinYIntercept;
     LinYInterceptError = AllLinFitCoefficients{1,i}{4};
     TotalLinYInterceptError = TotalLinYInterceptError + LinYInterceptError;
-       
-    y0 = AllExpFitCoefficients{i}{1};
-    Totaly0 = Totaly0 + y0;
-    a = AllExpFitCoefficients{i}{2};
-    Totala = Totala + a;
-    b = AllExpFitCoefficients{i}{3};
-    Totalb = Totalb + b;
+    
+    y0 = AllExpFitCoefficients{1,i}{1,1}
+  
+    a = AllExpFitCoefficients{1,i}{2,1}
+  
+    b = AllExpFitCoefficients{1,i}{3,1}
+
 
     XforLinear = DataForFitting2(1:LastLinearPoint(i,1),1);
     YforLinear = LinYIntercept + LinSlope*XforLinear;
-    %YforLinearError = YforLinear*sqrt(LinSlopePartialError^2+LinYInterceptPartialError^2);
     
     XforExp = DataForFitting2(LastLinearPoint(i,1):end,1);
     YforExp = y0 + a*exp(b*XforExp);
@@ -748,36 +751,41 @@ for i = [1:A]
     % Below is a text box which will display the title of the sample/image
     figure(99)
     
-    GraphTitle = '';
-    
     TitleForManyPlotsFigure = get(handles.edit3, 'string');
-    
-    ImageNumber = i;
     TitleNotes = annotation('textbox',...
     [0.195 0.84 0.64 0.075],...
     'String',{TitleForManyPlotsFigure},...
-    'FontSize',12,...
+    'FontSize',14,...
     'FontName','Constantina',...
     'LineStyle','-',...
     'EdgeColor',[0 0 0],...
     'LineWidth',0.01,...
     'BackgroundColor',[1 1 1],...
     'Color',[0.1 0.1 0.1],...
-    'Interpreter', 'none');
+    'Interpreter', 'none',...
+    'FontWeight', 'bold',...
+    'HorizontalAlignment','center',...
+    'FitBoxToText','on');
 
     plot(XforLinear, DataForFitting2(1:LastLinearPoint(i,1),2),'o'); hold on;
     plot(XforLinear,YforLinear,'b'), hold on;  
     
     plot(XforExp, YforExp,'g'), hold on;
     plot(XforExp, DataForFitting2(LastLinearPoint(i,1):end,2),'x'); hold on;
-    
-    axis([1.5 tempLength/2 0 DataForFitting2(end,2)+DataForFitting2(end,2)/5]);
+
     errorbar(DataForFitting2(:,1),DataForFitting2(:,2), DataForFitting2(:,3),'r.');   
-    grid on; xlabel('Log( LengthScale [A] )'); ylabel('Log( RMS Roughness [A] )');
     
+    grid on;
+    axis([1.5 ceil(DataForFitting2(end,1)*10)/10 0 DataForFitting2(end,2)+DataForFitting2(end,2)/4]);
+    xlabel('Log( LengthScale [A] )','FontWeight','bold','FontName','Constantina','FontSize',16); 
+    ylabel('Log( RMS Roughness [A] )','FontWeight','bold','FontName','Constantina','FontSize',16);
 end
 
-DfErrorAVG = std(AllDfErrors)/sqrtA;
+if A == 1
+    DfErrorAVG = AllDfErrors;
+else
+    DfErrorAVG = 1 / sqrt(SumOfDfWeights);
+end
 DfErrorAVG = ceil(DfErrorAVG/10^floor(log10(DfErrorAVG)))*10^floor(log10(DfErrorAVG)); % salt to suit...
 FractalErrorInfoAVG = num2str(DfErrorAVG);
 FractalErrorInfoAVG = cat(2,'(',FractalErrorInfoAVG,')');
@@ -788,7 +796,11 @@ DfAVG = DfAVG(1:end-2);
 FractalInfoAVG = 'Fractal Dimension: ';
 FractalInfoAVG = cat(2,FractalInfoAVG, DfAVG,Space,FractalErrorInfoAVG);
 
-SatRuffErrorAVG = std(AllSatRuffErrors)/sqrtA;
+if A == 1
+    SatRuffErrorAVG = AllSatRuffErrors;
+else
+    SatRuffErrorAVG = 1 / sqrt(SumOfSatRuffWeights);
+end
 SatRuffErrorAVG = ceil(SatRuffErrorAVG/10^floor(log10(SatRuffErrorAVG)))*10^floor(log10(SatRuffErrorAVG)); % salt to suit...   
 SatRuffErrorInfoAVG = num2str(SatRuffErrorAVG);
 SatRuffErrorInfoAVG = cat(2,'(',SatRuffErrorInfoAVG,')');
@@ -799,7 +811,11 @@ SatRuffAVG = SatRuffAVG(1:end-2);
 SatRuffInfoAVG = 'Saturation Roughness: ';
 SatRuffInfoAVG = cat(2,SatRuffInfoAVG, SatRuffAVG,Space,SatRuffErrorInfoAVG,' [A]');
 
-CorrLengthErrorAVG = std(AllCorrLengthErrors)/sqrtA;
+if A == 1
+    CorrLengthErrorAVG = AllCorrLengthErrors;
+else
+    CorrLengthErrorAVG = 1 / sqrt(SumOfCorrLengthWeights);
+end
 CorrLengthErrorAVG = ceil(CorrLengthErrorAVG/10^floor(log10(CorrLengthErrorAVG)))*10^floor(log10(CorrLengthErrorAVG)); % salt to suit... 
 CorrLengthErrorInfoAVG = num2str(CorrLengthErrorAVG);
 CorrLengthErrorInfoAVG = cat(2,'(',CorrLengthErrorInfoAVG,')');
@@ -826,15 +842,16 @@ ImageResolution = cat(2, 'Image Resolution: ', ImageResolution, ' [A/pixel]');
 % information about the sample
 
 ImageNotes = annotation('textbox',...
-[0.36 0.12 0.54 0.31],...
-'String',{PhysicalImageSize ImageResolution Space FractalInfoAVG SatRuffInfoAVG CorrLengthInfoAVG },...
-'FontSize',12,...
-'FontName','Constantina',...
-'LineStyle','-',...
-'EdgeColor',[0 0 0],...
-'LineWidth',0.1,...
-'BackgroundColor',[1 1 1],...
-'Color',[0.1 0.1 0.1]);
+    [0.62 0.08 0.1 0.3],...
+    'String',{PhysicalImageSize ImageResolution Space FractalInfoAVG SatRuffInfoAVG CorrLengthInfoAVG },...
+    'FontSize',14,...
+    'FontName','Constantina',...
+    'LineStyle','-',...
+    'EdgeColor',[0 0 0],...
+    'LineWidth',0.1,...
+    'BackgroundColor',[1 1 1],...
+    'Color',[0.1 0.1 0.1],...
+    'FitBoxToText','on');
    
 % --- Average and then plot all data, as a single set, on a Single Figure
 function pushbutton5_Callback(hObject, eventdata, handles)
@@ -848,48 +865,65 @@ global AllLinFitCoefficients
 global AllExpFitCoefficients
 global AllImageStats
 global AllRoughnessParameters
-global FileName
 global LastLinearPoint
 global Pixels
 
-Space = ' ';
-clippedString = 0;
-TotalYDataForFitting = zeros(length(AllImageStats{1}{3}),1);
-TotalYErrorDataForFitting = zeros(length(AllImageStats{1}{3}),1);
-TotalLinSlope = 0;
-TotalLinSlopeError = 0;
-TotalLinYIntercept = 0;
-TotalLinYInterceptError = 0;
-Totaly0 = 0;
-Totala = 0;
-Totalb = 0;
-TotalDf = 0;
-DfError = 0;
+AllDfErrors = zeros(1,A);
+AllCorrLengthErrors = zeros(1,A);
+AllSatRuffErrors = zeros(1,A);
+                     % Declaring various variables/arrays used in this functions ... it does not necessarily improve performance
+clippedString = '';  % to pre-allocate for single value variables, but adds clarity in my opinion
+CorrLengthAVG = 0;   % pre-allocating arrays does carry performance benefits, however.
+CorrLengthErrorAVG = 0;
+DfAVG = 0;
 DfErrorAVG = 0;
-SatRuff = 0;
-SatRuffError = 0;
-TotalCorrLength = 0;
-CorrLengthError = 0;
-AVGDfError = 0;
-TotalSatRuff = 0;
-TotalCorrLengthError = 0;
-TotalSatRuffError = 0;
+SatRuffAVG = 0;
+SatRuffErrorAVG = 0;
+Space = ' '; 
 sqrtA = sqrt(A);
 SumOfCorrLengthWeights = 0;
 SumOfSatRuffWeights = 0;
 SumOfDfWeights = 0;
+Totala = 0;
+Totalb = 0;
+TotalCorrLength = 0;
+TotalCorrLengthError = 0;
+TotalDf = 0;
+TotalLinSlope = 0;
+TotalLinSlopeError = 0;
+TotalLinYIntercept = 0;
+TotalLinYInterceptError = 0;
+TotalSatRuff = 0;
+TotalSatRuffError = 0;
+Totaly0 = 0;
+
+TotalYDataForFitting = zeros(length(AllImageStats{1}{3}),1);
+TotalYErrorDataForFitting = zeros(length(AllImageStats{1}{3}),1);
+SumOfWeightForYDataForFitting = zeros(length(AllImageStats{1}{3}),1);
+y0 = 0;
+LastLinearPoint;
+length(AllImageStats{1}{3});
+SumOfExpFitWeight = 0;
+WeightedExpFit = []; % these both need to be arrays, not vectors
+PartialExpFit = [];
 
 for i = [1:A]
     
-    N = AllImageStats{i}{3}; 
-    tempLength = length(N(:,1)) ;
-    
+    N = AllImageStats{i}{3};
+    tempLength = length(N(:,1));
+
     DataForFitting2 = zeros(tempLength,3);
     DataForFitting2(:,1) = N(:,4);
     DataForFitting2(:,2) = N(:,5);
     DataForFitting2(:,3) = N(:,6);
     
-    TotalYDataForFitting = TotalYDataForFitting + DataForFitting2(:,2);  % this needs to be weighted!!
+    for j = [1:tempLength]
+        WeightForYDataForFitting(j,1) = 1 / DataForFitting2(j,3)^2;
+    end
+    
+    SumOfWeightForYDataForFitting = SumOfWeightForYDataForFitting + WeightForYDataForFitting(:,1);
+    
+    TotalYDataForFitting = TotalYDataForFitting + DataForFitting2(:,2).*WeightForYDataForFitting(:,1);
     TotalYErrorDataForFitting = TotalYErrorDataForFitting + DataForFitting2(:,3);
     
     LinSlope = AllLinFitCoefficients{1,i}{1};
@@ -901,14 +935,27 @@ for i = [1:A]
     TotalLinYIntercept = TotalLinYIntercept + LinYIntercept;
     LinYInterceptError = AllLinFitCoefficients{1,i}{4};
     TotalLinYInterceptError = TotalLinYInterceptError + LinYInterceptError;
-       
-    y0 = AllExpFitCoefficients{i}{1};
-    Totaly0 = Totaly0 + y0;
-    a = AllExpFitCoefficients{i}{2};
-    Totala = Totala + a;
-    b = AllExpFitCoefficients{i}{3};
-    Totalb = Totalb + b;
-
+    
+    ExpFitError = AllExpFitCoefficients{2,i}{2,1};
+%     y0error = AllExpFitCoefficients{2,i}{2,2}
+    ExpFitWeight = 1 / ExpFitError^2;
+    
+    y0 = AllExpFitCoefficients{1,i}{1,1};
+    Totaly0 = Totaly0 + y0*ExpFitWeight;
+    a = AllExpFitCoefficients{1,i}{2,1};
+    Totala = Totala + a*ExpFitWeight;
+    b = AllExpFitCoefficients{1,i}{3,1};
+    Totalb = Totalb + b*ExpFitWeight;
+    
+    PartialExpFit = y0 + a*exp(b*N(LastLinearPoint:end,4))
+    PartialExpFit = PartialExpFit*ExpFitWeight
+   
+    WeightedExpFitTemp = 
+    
+    WeightedExpFit = WeightedExpFit + PartialExpFit
+    
+    SumOfExpFitWeight = SumOfExpFitWeight + ExpFitWeight
+    
     XforLinear = DataForFitting2(1:LastLinearPoint(i,1),1);
     XforExp = DataForFitting2(LastLinearPoint(i,1):end,1);
     
@@ -932,11 +979,42 @@ for i = [1:A]
     TotalCorrLength = TotalCorrLength + CurrentCorrLength*CurrentCorrLengthWeight;
     SumOfCorrLengthWeights = SumOfCorrLengthWeights + CurrentCorrLengthWeight;
     AllCorrLengthErrors(1,i) = AllRoughnessParameters{1,i}{3,1}(1,3);
-    
-     
 end
 
-CorrLengthErrorAVG = std(AllCorrLengthErrors)/sqrtA;
+meanXforExp = XforExp;
+meanXDataForFitting = N(:,4);
+
+WeightedYDataForFitting = TotalYDataForFitting./SumOfWeightForYDataForFitting;
+
+%meanYErrorDataForFitting = TotalYErrorDataForFitting/A;
+
+meanYErrorDataForFitting = TotalYErrorDataForFitting./ sqrt(SumOfWeightForYDataForFitting);
+
+meanLinSlope = TotalLinSlope/A;  
+meanLinYIntercept = TotalLinYIntercept/A;                % all could be weighted...
+
+sqrtOfSumOfExpFitWeight = sqrt(SumOfExpFitWeight);
+
+Weightedy0 = Totaly0 / sqrtOfSumOfExpFitWeight / 100
+Weighteda  = Totala / sqrtOfSumOfExpFitWeight / 100
+Weightedb  = Totalb  / sqrtOfSumOfExpFitWeight  / 100     % WTF? This seems to be the problem spot now... scaled poorly
+
+MeanYforLinear = meanLinYIntercept + meanLinSlope*XforLinear;
+MeanYforExp = Weightedy0 + Weighteda*exp(Weightedb*meanXDataForFitting(LastLinearPoint(i,1):end));
+
+%MeanYforExp = meany0 + meana*exp(meanb*WeightedYDataForFitting(LastLinearPoint(i,1):end,1))
+% 
+% BLAH = WeightedYDataForFitting(LastLinearPoint(i,1):end,1) - MeanYforExp
+% WeightedYDataForFitting(LastLinearPoint(i,1):end,1) =  WeightedYDataForFitting(LastLinearPoint(i,1):end,1) - BLAH
+
+%BLAH2 = WeightedYDataForFitting(1:LastLinearPoint(i,1),1) - MeanYforLinear
+%WeightedYDataForFitting(1:LastLinearPoint(i,1),1) = WeightedYDataForFitting(1:LastLinearPoint(i,1),1) - BLAH2
+
+if A == 1
+    CorrLengthErrorAVG = AllCorrLengthErrors;
+else
+    CorrLengthErrorAVG = 1 / sqrt(SumOfCorrLengthWeights);
+end
 CorrLengthErrorAVG = ceil(CorrLengthErrorAVG/10^floor(log10(CorrLengthErrorAVG)))*10^floor(log10(CorrLengthErrorAVG)); % salt to suit... 
 CorrLengthErrorInfoAVG = num2str(CorrLengthErrorAVG);
 CorrLengthErrorInfoAVG = cat(2,'(',CorrLengthErrorInfoAVG,')');
@@ -947,24 +1025,12 @@ CorrLengthAVG = CorrLengthAVG(1:end-4);
 CorrLengthInfoAVG = 'Correlation Length: ';
 CorrLengthInfoAVG = cat(2, CorrLengthInfoAVG, CorrLengthAVG, Space, CorrLengthErrorInfoAVG,' [A]'); 
 
-meanXDataForFitting = N(:,4);
-meanYDataForFitting = TotalYDataForFitting/A;  % this could be done with a weighted avg as well
-meanYErrorDataForFitting = TotalYErrorDataForFitting/A;
-meanLinSlope = TotalLinSlope/A;
+if A == 1
+    DfErrorAVG = AllDfErrors;
+else
+    DfErrorAVG = 1 / sqrt(SumOfDfWeights);
+end
 
-meanLinYIntercept = TotalLinYIntercept/A;
-meanLinYInterceptError = TotalLinYInterceptError/A;
-
-meany0 = Totaly0 / A;
-meana = Totala / A;
-meanb = Totalb / A;
-
-MeanYforLinear = meanLinYIntercept + meanLinSlope*XforLinear;
-MeanYforExp = meany0 + meana*exp(meanb*XforExp);
-
-sqrtA = sqrt(A); % We will need this for computing standard deviations of mean values, below
-
-DfErrorAVG = std(AllDfErrors)/sqrtA;
 DfErrorAVG = ceil(DfErrorAVG/10^floor(log10(DfErrorAVG)))*10^floor(log10(DfErrorAVG)); % salt to suit...
 FractalErrorInfoAVG = num2str(DfErrorAVG);
 FractalErrorInfoAVG = cat(2,'(',FractalErrorInfoAVG,')');
@@ -975,7 +1041,12 @@ DfAVG = DfAVG(1:end-2);
 FractalInfoAVG = 'Fractal Dimension: ';
 FractalInfoAVG = cat(2,FractalInfoAVG, DfAVG,Space,FractalErrorInfoAVG);
 
-SatRuffErrorAVG = std(AllSatRuffErrors)/sqrtA;
+if A == 1
+    SatRuffErrorAVG = AllSatRuffErrors;    
+else
+    SatRuffErrorAVG = 1 / sqrt(SumOfSatRuffWeights);
+end
+
 SatRuffErrorAVG = ceil(SatRuffErrorAVG/10^floor(log10(SatRuffErrorAVG)))*10^floor(log10(SatRuffErrorAVG)); % salt to suit...   
 SatRuffErrorInfoAVG = num2str(SatRuffErrorAVG);
 SatRuffErrorInfoAVG = cat(2,'(',SatRuffErrorInfoAVG,')');
@@ -995,23 +1066,22 @@ PhysicalImageSize = cat(2, 'Scan Size: ', Space, clippedString, tempUnits); %alt
 
 figure();
     
-    GraphTitle = '';
-    
-    TitleForAverageFigure = get(handles.edit5, 'string');
-    
     % Below is a text box which will display the title of the sample/image
-    ImageNumber = i;
+    TitleForAverageFigure = get(handles.edit5, 'string');
     TitleNotes = annotation('textbox',...
     [0.195 0.84 0.64 0.075],...
     'String',{TitleForAverageFigure},...
-    'FontSize',12,...
+    'FontSize',14,...
     'FontName','Constantina',...
     'LineStyle','-',...
     'EdgeColor',[0 0 0],...
     'LineWidth',0.01,...
     'BackgroundColor',[1 1 1],...
     'Color',[0.1 0.1 0.1],...
-    'Interpreter', 'none');
+    'Interpreter', 'none',...
+    'FontWeight', 'bold',...
+    'HorizontalAlignment','center',...
+    'FitBoxToText','on');
     
     % Below, calculations are made for the parameters and info to be
     % displayed in the description text-box, lower-right corner of figure
@@ -1024,25 +1094,26 @@ figure();
     % Below is a textbox which will show the important
     % information about the sample
     ImageNotes = annotation('textbox',...
-    [0.36 0.12 0.54 0.31],...
+    [0.62 0.08 0.1 0.3],...
     'String',{PhysicalImageSize ImageResolution Space FractalInfoAVG SatRuffInfoAVG CorrLengthInfoAVG },...
-    'FontSize',12,...
+    'FontSize',14,...
     'FontName','Constantina',...
     'LineStyle','-',...
     'EdgeColor',[0 0 0],...
     'LineWidth',0.1,...
     'BackgroundColor',[1 1 1],...
-    'Color',[0.1 0.1 0.1]);
+    'Color',[0.1 0.1 0.1],...
+    'FitBoxToText','on');
     
     plot(meanXDataForFitting(1:LastLinearPoint(i,1)), MeanYforLinear,'b'), hold on;  
-    plot(meanXDataForFitting(1:LastLinearPoint(i,1)), meanYDataForFitting(1:LastLinearPoint(i,1)),'o'); hold on;
+    plot(meanXDataForFitting(1:LastLinearPoint(i,1)), WeightedYDataForFitting(1:LastLinearPoint(i,1)),'o'); hold on;
     
-    plot(meanXDataForFitting(LastLinearPoint(i,1):end), MeanYforExp,'g'), hold on;
-    plot(meanXDataForFitting(LastLinearPoint(i,1):end), meanYDataForFitting(LastLinearPoint(i,1):end),'x'); hold on;
+    plot(meanXDataForFitting(LastLinearPoint(i,1):end), WeightedExpFit,'g'), hold on;
+    plot(meanXDataForFitting(LastLinearPoint(i,1):end), WeightedYDataForFitting(LastLinearPoint(i,1):end),'x'); hold on;
     
-    errorbar(meanXDataForFitting(:), meanYDataForFitting(:), meanYErrorDataForFitting(:), 'r.'); 
+    errorbar(meanXDataForFitting(:), WeightedYDataForFitting(:), meanYErrorDataForFitting(:), 'r.'); 
     
-    axis([1.5 tempLength/2 0 meanYDataForFitting(end)+meanYDataForFitting(end)/4]); % this scales the axes to the data
-   
-    grid on; xlabel('Log( LengthScale [A] )'); ylabel('Log( RMS Roughness [A] )'); %Adds gridlines and axes labels
-
+    axis([1.5 ceil(meanXDataForFitting(end)*10)/10 0 WeightedYDataForFitting(end) + WeightedYDataForFitting(end)/4]);
+    grid on; 
+    xlabel('Log( LengthScale [A] )','FontWeight','bold','FontName','Constantina','FontSize',16); 
+    ylabel('Log( RMS Roughness [A] )','FontWeight','bold','FontName','Constantina','FontSize',16);
