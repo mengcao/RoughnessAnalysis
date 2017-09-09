@@ -4,4 +4,4 @@
 - bullet points
 - here
 
-![Put some screenshots here](schrodingers-cat.png "blah blah")
+![Put some screenshots here](schrodingers-cat.png)
